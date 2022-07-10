@@ -1,0 +1,62 @@
+version: '3'
+
+services:
+  web-app:
+    user: root
+    build: .
+    ports:
+      - 8000:8000
+    depends_on:
+      migration:
+        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    command: bash -c "uvicorn handlers:app --host 0.0.0.0 --port 8000"
+
+  worker:
+    user: root
+    build: .
+    depends_on:
+      migration:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    command: bash -c "python worker.py"
+
+  migration:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    command: bash -c "alembic upgrade head"
+
+  db:
+    image: postgres:latest
+    restart: always
+    ports:
+      - 5432:5432
+    environment:
+      POSTGRES_PASSWORD: '1234'
+      POSTGRES_NAME: 'postgres'
+      POSTGRES_USER: 'postgres'
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: 'rabbitmq'
+    ports:
+      - 5672:5672
+      - 15672:15672
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 30s
+      timeout: 30s
+      retries: 3
